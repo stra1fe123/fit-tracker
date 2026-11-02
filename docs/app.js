@@ -204,12 +204,21 @@ function ageFrom(birthDate) {
   return age;
 }
 
-// Формула Миффлина–Сан Жеора + коэффициент активности + цель
+// Норма на день. Режим «Свои пропорции»: граммы на 1 кг веса, которые задал сам.
+// Режим «Авто»: формула Миффлина–Сан Жеора + коэффициент активности + цель.
 function targets() {
   const w = avgWeight();
+  if (!w) return null;
+  if (setting('mode', 'auto') === 'custom') {
+    if (!num(setting('proteinPerKg'))) return null;
+    const protein = Math.round(w * num(setting('proteinPerKg')));
+    const fat = Math.round(w * num(setting('fatPerKg')));
+    const carbs = Math.round(w * num(setting('carbsPerKg')));
+    return { custom: true, kcal: protein * 4 + fat * 9 + carbs * 4, protein, fat, carbs, weight: w };
+  }
   const h = num(setting('height'));
   const bd = setting('birthDate');
-  if (!w || !h || !bd) return null;
+  if (!h || !bd) return null;
   const age = ageFrom(bd);
   const bmr = 10 * w + 6.25 * h - 5 * age + (setting('sex', 'male') === 'female' ? -161 : 5);
   const tdee = bmr * num(setting('activity', '1.375'));
@@ -588,15 +597,40 @@ function viewProgress() {
 
 // ----- Профиль -----
 
-function targetsHtml() {
-  const t = targets();
-  if (!t) return '<p class="muted small" style="margin:0">Заполни данные выше и внеси хотя бы одно взвешивание (вкладка «Прогресс» или баннер на «Питании»).</p>';
+function targetStats(t) {
+  const perKg = g => `<br><span class="muted small">${r1(g / t.weight)} г/кг</span>`;
   return `<div class="kcal-big">${t.kcal} <span class="muted small">ккал в день</span></div>
     <div class="stats mt">
-      <div><b style="color:var(--p)">${t.protein} г</b><span class="muted small">белки</span></div>
-      <div><b style="color:var(--f)">${t.fat} г</b><span class="muted small">жиры</span></div>
-      <div><b style="color:var(--c)">${t.carbs} г</b><span class="muted small">углеводы</span></div>
-    </div>
+      <div><b style="color:var(--p)">${t.protein} г</b><span class="muted small">белки</span>${perKg(t.protein)}</div>
+      <div><b style="color:var(--f)">${t.fat} г</b><span class="muted small">жиры</span>${perKg(t.fat)}</div>
+      <div><b style="color:var(--c)">${t.carbs} г</b><span class="muted small">углеводы</span>${perKg(t.carbs)}</div>
+    </div>`;
+}
+
+function targetsHtml() {
+  const mode = setting('mode', 'auto');
+  const t = targets();
+  const w = avgWeight();
+  const modeSelect = `<label>Как считать<select data-setting="mode">${opt([['auto', 'Автоматически по формуле'], ['custom', 'Свои пропорции']], mode)}</select></label>`;
+  const noWeight = '<p class="muted small" style="margin:0">Сначала внеси хотя бы одно взвешивание (вкладка «Прогресс» или баннер на «Питании»).</p>';
+
+  if (mode === 'custom') {
+    if (!w) return modeSelect + noWeight;
+    return `${modeSelect}
+      <p class="muted small" style="margin:0 0 8px">Впиши, сколько ешь сейчас при весе ${w} кг. Приложение запомнит граммы на 1 кг веса
+      и само пересчитает норму, когда вес изменится.</p>
+      <div class="row">
+        <label class="grow">Белки, г<input id="cu-p" inputmode="decimal" value="${t ? t.protein : ''}"></label>
+        <label class="grow">Жиры, г<input id="cu-f" inputmode="decimal" value="${t ? t.fat : ''}"></label>
+        <label class="grow">Углев., г<input id="cu-c" inputmode="decimal" value="${t ? t.carbs : ''}"></label>
+      </div>
+      <button class="btn block" data-act="save-custom">Сохранить</button>
+      ${t ? `<div class="mt">${targetStats(t)}</div>
+        <p class="muted small">Считается от веса ${t.weight} кг (среднее за 7 дней).</p>` : ''}`;
+  }
+
+  if (!t) return modeSelect + (w ? '<p class="muted small" style="margin:0">Заполни рост и дату рождения выше.</p>' : noWeight);
+  return `${modeSelect}${targetStats(t)}
     <p class="muted small">Вес ${t.weight} кг (среднее за 7 дней), возраст ${t.age}. Обмен в покое ≈ ${t.bmr} ккал,
     с учётом активности ≈ ${t.tdee} ккал, цель: ${t.goal[1].toLowerCase()}.<br>
     Норма пересчитывается сама, когда меняется твой вес или возраст.</p>`;
@@ -866,6 +900,17 @@ const actions = {
     saveSession();
     render();
     window.scrollTo(0, 0);
+  },
+
+  'save-custom': () => {
+    const w = avgWeight();
+    const p = num($('#cu-p').value), f = num($('#cu-f').value), c = num($('#cu-c').value);
+    if (!p || !f || !c) return toast('Заполни белки, жиры и углеводы');
+    setSetting('proteinPerKg', (p / w).toFixed(3));
+    setSetting('fatPerKg', (f / w).toFixed(3));
+    setSetting('carbsPerKg', (c / w).toFixed(3));
+    $('#targets').innerHTML = targetsHtml();
+    toast('Норма сохранена');
   },
 
   // продукты и подключение
