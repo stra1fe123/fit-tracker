@@ -2,6 +2,8 @@
 
 // ---------- Константы ----------
 
+const APP_VERSION = 4;
+
 const SHEETS = ['Settings', 'Products', 'Meals', 'Workouts', 'Exercises', 'Log', 'Weight'];
 const NUM = new Set(['protein', 'fat', 'carbs', 'kcal', 'grams', 'sets', 'reps', 'weight', 'order', 'set']);
 
@@ -702,7 +704,21 @@ function viewProfile() {
       <label>Ключ доступа<input id="c-token" value="${esc(conn.token)}" autocomplete="off"></label>
       <button class="btn block" data-act="connect">${conn.url ? 'Переподключить' : 'Подключить'}</button>
       ${conn.url ? '<button class="btn ghost block mt" data-act="disconnect">Отключить на этом устройстве</button>' : ''}
-    </div>`;
+    </div>
+    <p class="muted small" style="text-align:center">${screenInfo()}</p>`;
+}
+
+// Служебная строка для отладки вёрстки на телефоне
+function screenInfo() {
+  const probe = document.createElement('div');
+  probe.style.cssText = 'position:fixed;visibility:hidden;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)';
+  document.body.appendChild(probe);
+  const cs = getComputedStyle(probe);
+  const safe = parseInt(cs.paddingTop) + '/' + parseInt(cs.paddingBottom);
+  probe.remove();
+  const vv = window.visualViewport ? Math.round(visualViewport.height) : '-';
+  return `v${APP_VERSION} · окно ${innerHeight} · vv ${vv} · экран ${screen.height} · html ${document.documentElement.clientHeight}`
+    + ` · body ${Math.round(document.body.getBoundingClientRect().height)} · safe ${safe} · ${navigator.standalone ? 'standalone' : 'browser'}`;
 }
 
 // ---------- Действия ----------
