@@ -140,13 +140,20 @@ function remove(name, ids) {
   return true;
 }
 
-// Запускается каждый день: если сегодня нет записи веса — присылает письмо
+const DEFAULT_WEIGH_DAYS = '2,5,0'; // вторник, пятница, воскресенье (0 — воскресенье)
+
+// Запускается каждый день: если сегодня день взвешивания и нет записи веса — присылает письмо
 function dailyReminder() {
   const settings = {};
   readSheet('Settings').forEach(r => { settings[r.id] = r.value; });
   if (settings.reminder === 'off') return;
 
-  const today = Utilities.formatDate(new Date(), Session.getScriptTimeZone(), 'yyyy-MM-dd');
+  const tz = Session.getScriptTimeZone();
+  const weekday = Number(Utilities.formatDate(new Date(), tz, 'u')) % 7; // 'u': 1 — пн … 7 — вс
+  const days = String(settings.weighDays || DEFAULT_WEIGH_DAYS).split(',').map(Number);
+  if (!days.includes(weekday)) return;
+
+  const today = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   if (readSheet('Weight').some(r => r.date === today)) return;
 
   const link = settings.appUrl ? '\n\nОткрыть приложение: ' + settings.appUrl : '';

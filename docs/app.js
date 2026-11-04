@@ -320,8 +320,14 @@ function viewFood() {
     </div>`;
 }
 
+// Дни взвешивания: номера дней недели как в JS (0 — воскресенье)
+const WEEKDAYS = [[1, 'Пн'], [2, 'Вт'], [3, 'Ср'], [4, 'Чт'], [5, 'Пт'], [6, 'Сб'], [0, 'Вс']];
+const DEFAULT_WEIGH_DAYS = '2,5,0';
+const weighDays = () => setting('weighDays', DEFAULT_WEIGH_DAYS).split(',').map(Number).filter(n => !isNaN(n));
+
 function weightBanner() {
   if (ui.date !== today() || db.Weight.some(w => w.date === today())) return '';
+  if (!weighDays().includes(new Date().getDay())) return '';
   return `<div class="banner">
     <b>⚖️ Пора взвеситься</b>
     <p class="small" style="margin:4px 0 8px">Лучше утром, натощак, в одно и то же время.</p>
@@ -687,6 +693,9 @@ function viewProfile() {
     </div>
     <div class="card">
       <h2>Напоминание о взвешивании</h2>
+      <label>Дни взвешивания</label>
+      <div class="chips" style="margin:0 0 12px">${WEEKDAYS.map(([d, name]) =>
+        `<button class="chip ${weighDays().includes(d) ? 'on' : ''}" data-act="weigh-day" data-d="${d}">${name}</button>`).join('')}</div>
       <label>Письмо на почту утром, если вес ещё не внесён
         <select data-setting="reminder">${opt([['on', 'Включено'], ['off', 'Выключено']], setting('reminder', 'on'))}</select></label>
       <p class="muted small" style="margin:0">Письмо отправляет Google с твоего же адреса. Работает после подключения таблицы. В приложении напоминание показывается всегда.</p>
@@ -911,6 +920,13 @@ const actions = {
     scrollTop();
   },
 
+  'weigh-day': el => {
+    const d = Number(el.dataset.d);
+    const days = weighDays();
+    const next = days.includes(d) ? days.filter(x => x !== d) : days.concat(d);
+    setSetting('weighDays', next.length ? next.join(',') : 'none'); // пустое значение = «по умолчанию»
+    el.classList.toggle('on', next.includes(d));
+  },
   'save-custom': () => {
     const w = avgWeight();
     const p = num($('#cu-p').value), f = num($('#cu-f').value), c = num($('#cu-c').value);
