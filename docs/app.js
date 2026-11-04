@@ -2,7 +2,7 @@
 
 // ---------- Константы ----------
 
-const APP_VERSION = 4;
+const APP_VERSION = 5;
 
 const SHEETS = ['Settings', 'Products', 'Meals', 'Workouts', 'Exercises', 'Log', 'Weight'];
 const NUM = new Set(['protein', 'fat', 'carbs', 'kcal', 'grams', 'sets', 'reps', 'weight', 'order', 'set']);
@@ -1034,11 +1034,14 @@ document.addEventListener('visibilitychange', () => {
   pull();
 });
 
-// iPhone «с экрана Домой»: iOS даёт окно на высоту строки состояния короче экрана,
-// и панель вкладок висит над нижним краем. Растягиваем приложение на весь экран.
+// iPhone «с экрана Домой»: если страница не длиннее окна, iOS даёт окно на высоту
+// строки состояния короче экрана и обрезает всё ниже — панель вкладок висит над краем.
+// Когда документ длиннее окна, iOS отдаёт весь экран. Поэтому делаем документ всегда
+// на 1px выше экрана (постоянно, чтобы высота не менялась и ничего не прыгало).
 function fitScreen() {
-  const portrait = innerHeight > innerWidth;
-  document.body.style.height = navigator.standalone && portrait && screen.height > innerHeight ? screen.height + 'px' : '';
+  const full = navigator.standalone && innerHeight > innerWidth;
+  document.documentElement.style.minHeight = full ? screen.height + 1 + 'px' : '';
+  document.body.style.height = full ? screen.height + 'px' : '';
 }
 addEventListener('resize', fitScreen);
 addEventListener('orientationchange', () => setTimeout(fitScreen, 300));

@@ -28,11 +28,10 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; overflow: hidden; }
+html, body { margin: 0; }
 /* Каркас приложения: шапка и панель вкладок стоят на месте, прокручивается только main.
    Так iOS не дёргает страницу при переключении между длинными и короткими вкладками.
-   Высоту задаём через inset: 0, а не 100vh/100dvh: на iPhone в режиме «с экрана Домой»
-   они иногда меньше экрана на высоту строки состояния, и панель вкладок поднимается. */
+   Про высоту на iPhone «с экрана Домой» — см. fitScreen() в app.js. */
 body {
   position: fixed; inset: 0;
   background: var(--bg);
