@@ -16,6 +16,7 @@ const GOALS = [
   ['keep', 'Поддержание веса', 1],
   ['bulk', 'Набор массы (+10% ккал)', 1.1],
 ];
+const ICON_EDIT = '<svg class="ico" viewBox="0 0 24 24" aria-label="Изменить"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="M13.5 6.5l4 4"/></svg>';
 const TITLES = { food: 'Питание', workouts: 'Тренировки', progress: 'Прогресс', profile: 'Профиль' };
 
 // ---------- Утилиты ----------
@@ -138,10 +139,10 @@ async function api(body) {
 
 function setSync(state) {
   $('#sync').textContent = {
-    local: '📱 локально',
-    saving: '⏳ сохраняю…',
+    local: 'локально',
+    saving: 'сохраняю…',
     ok: '✓ синхр.',
-    offline: '⚠︎ нет связи',
+    offline: 'нет связи',
   }[state];
 }
 
@@ -296,7 +297,7 @@ function viewFood() {
       <button class="icon-btn" data-act="day" data-d="1" ${ui.date >= today() ? 'disabled' : ''}>›</button>
     </div>
     ${weightBanner()}
-    <div class="card">
+    <div class="card hero">
       ${t
         ? `<div class="row between"><div><span class="kcal-big">${Math.round(sum.kcal)}</span> <span class="muted">/ ${t.kcal} ккал</span></div>
            <span class="muted small">осталось ${Math.max(0, t.kcal - Math.round(sum.kcal))}</span></div>${bar(sum.kcal, t.kcal)}`
@@ -329,7 +330,7 @@ function weightBanner() {
   if (ui.date !== today() || db.Weight.some(w => w.date === today())) return '';
   if (!weighDays().includes(new Date().getDay())) return '';
   return `<div class="banner">
-    <b>⚖️ Пора взвеситься</b>
+    <b>Пора взвеситься</b>
     <p class="small" style="margin:4px 0 8px">Лучше утром, натощак, в одно и то же время.</p>
     <div class="row"><input id="w-today" inputmode="decimal" placeholder="Вес, кг">
     <button class="btn" data-act="save-weight" data-src="w-today">Сохранить</button></div>
@@ -342,7 +343,7 @@ function suggestHtml() {
   const found = db.Products.filter(p => p.name.toLowerCase().includes(q)).slice(0, 6);
   const exact = db.Products.some(p => p.name.toLowerCase() === q);
   return found.map(p => `<li data-act="pick" data-id="${esc(p.id)}">${esc(p.name)}<br><span class="muted small">${macrosLine(p)}</span></li>`).join('')
-    + (exact ? '' : `<li data-act="pick-new">➕ Новый продукт «${esc(ui.foodQuery.trim())}»</li>`);
+    + (exact ? '' : `<li data-act="pick-new">+ Новый продукт «${esc(ui.foodQuery.trim())}»</li>`);
 }
 
 function recentChips() {
@@ -442,14 +443,14 @@ function viewWorkouts() {
   if (ui.session && ui.sessionOpen) return viewSession();
   const list = workoutsSorted();
   return `
-    ${ui.session ? `<div class="banner row between"><span>🔥 Идёт тренировка «${esc(ui.session.name)}»</span>
+    ${ui.session ? `<div class="banner row between"><span>Идёт тренировка «${esc(ui.session.name)}»</span>
       <button class="btn" data-act="open-session">Продолжить</button></div>` : ''}
     ${list.length ? list.map(w => {
       const ex = exercisesOf(w.id);
       const last = lastDone(w.id);
       return `<div class="card">
-        <div class="row between"><h2 style="margin:0">${esc(w.name)}</h2>
-          <button class="icon-btn" data-act="edit-workout" data-id="${esc(w.id)}">✏️</button></div>
+        <div class="row between"><h3 class="display" style="margin:0;font-size:22px">${esc(w.name)}</h3>
+          <button class="icon-btn" data-act="edit-workout" data-id="${esc(w.id)}">${ICON_EDIT}</button></div>
         <p class="muted small">${ex.map(e => esc(e.name)).join(' · ') || 'Нет упражнений'}</p>
         <div class="row between">
           <span class="muted small">${last ? 'Последняя: ' + fmtDay(last) : 'Ещё не выполнялась'}</span>
@@ -500,7 +501,7 @@ function viewSession() {
         <h3>${esc(x.name)}</h3>
         <div class="muted small">План: ${x.planSets}×${x.reps || '—'} · ${r1(num(x.weight))} кг</div>
         ${last ? `<div class="muted small">Прошлый раз (${fmtShort(last[0].date)}): ${last.map(l => `${r1(l.weight)}×${l.reps}`).join(', ')}</div>` : ''}
-        ${sug ? `<div class="hint">💡 В прошлый раз всё выполнено — попробуй ${sug} кг
+        ${sug ? `<div class="hint">В прошлый раз всё выполнено — попробуй ${sug} кг
           <button class="btn ghost small" data-act="apply-sug" data-i="${i}" data-w="${sug}">применить</button></div>` : ''}
         <div class="sets">
           <span class="hdr">#</span><span class="hdr">Повторы</span><span class="hdr">Вес, кг</span><span></span>
@@ -671,7 +672,7 @@ function productItem(p) {
     </li>`;
   }
   return `<li><div class="info"><div class="name">${esc(p.name)}</div><div class="muted small">на 100 г: ${macrosLine(p)}</div></div>
-    <button class="icon-btn" data-act="edit-product" data-id="${esc(p.id)}">✏️</button></li>`;
+    <button class="icon-btn" data-act="edit-product" data-id="${esc(p.id)}">${ICON_EDIT}</button></li>`;
 }
 
 function viewProfile() {
@@ -698,7 +699,7 @@ function viewProfile() {
         `<button class="chip ${weighDays().includes(d) ? 'on' : ''}" data-act="weigh-day" data-d="${d}">${name}</button>`).join('')}</div>
       <label>Письмо на почту утром, если вес ещё не внесён
         <select data-setting="reminder">${opt([['on', 'Включено'], ['off', 'Выключено']], setting('reminder', 'on'))}</select></label>
-      <p class="muted small" style="margin:0">Письмо отправляет Google с твоего же адреса. Работает после подключения таблицы. В приложении напоминание показывается всегда.</p>
+      <p class="muted small" style="margin:0">Письмо отправляет Google с твоего же адреса. Работает после подключения таблицы. Баннер в приложении появляется в те же дни.</p>
     </div>
     <div class="card">
       <h2>Мои продукты (${products.length})</h2>
@@ -911,7 +912,7 @@ const actions = {
         if (maxW !== e.weight) changed.push(Object.assign({}, e, { weight: maxW }));
       });
       if (changed.length) upsert('Exercises', changed);
-      toast(`Тренировка сохранена 💪 ${changed.length ? 'Веса в плане обновлены.' : ''}`);
+      toast(`Тренировка сохранена. ${changed.length ? 'Веса в плане обновлены.' : ''}`);
     }
     ui.session = null;
     ui.sessionOpen = false;

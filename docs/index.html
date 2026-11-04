@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Fit Tracker</title>
-  <meta name="theme-color" content="#16a34a">
+  <meta name="theme-color" content="#ede3c8" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#111b28" media="(prefers-color-scheme: dark)">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -12,21 +13,49 @@
   <link rel="apple-touch-icon" href="icons/icon-180.png">
   <link rel="icon" href="icons/icon-192.png">
   <link rel="manifest" href="manifest.webmanifest">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@600&display=swap">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <header class="topbar">
-    <h1 id="title">Питание</h1>
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 64 64" aria-hidden="true">
+        <rect class="logo-bg" width="64" height="64" rx="18"/>
+        <g transform="rotate(-35 32 32)" fill="#ede3c8">
+          <rect x="9" y="19" width="8" height="26" rx="3"/>
+          <rect x="18" y="23" width="5" height="18" rx="2"/>
+          <rect x="22" y="29.5" width="20" height="5" rx="2.5"/>
+          <rect x="41" y="23" width="5" height="18" rx="2"/>
+          <rect x="47" y="19" width="8" height="26" rx="3"/>
+        </g>
+        <circle cx="50" cy="50" r="5" fill="#5c1f2e" stroke="#ede3c8" stroke-width="2"/>
+      </svg>
+      <h1 id="title" class="display">Питание</h1>
+    </div>
     <span id="sync" class="sync" title="Синхронизация"></span>
   </header>
 
   <main id="view"></main>
 
   <nav class="tabs">
-    <button data-tab="food" class="active"><span>🍽️</span>Питание</button>
-    <button data-tab="workouts"><span>🏋️</span>Тренировки</button>
-    <button data-tab="progress"><span>📈</span>Прогресс</button>
-    <button data-tab="profile"><span>⚙️</span>Профиль</button>
+    <button data-tab="food" class="active">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 3v6a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2V3"/><path d="M7 3v18"/><path d="M20 15V3a4 4 0 0 0-4 4v6a2 2 0 0 0 2 2h2Zm0 0v6"/></svg>
+      Питание
+    </button>
+    <button data-tab="workouts">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6.5 6.5l11 11"/><path d="M3 10l7-7"/><path d="M14 21l7-7"/><path d="M2 6l4-4"/><path d="M18 22l4-4"/></svg>
+      Тренировки
+    </button>
+    <button data-tab="progress">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-6"/></svg>
+      Прогресс
+    </button>
+    <button data-tab="profile">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 3.6-6 8-6s8 2 8 6"/></svg>
+      Профиль
+    </button>
   </nav>
 
   <div id="toast" class="toast"></div>
