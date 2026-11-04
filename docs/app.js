@@ -30,6 +30,7 @@ const store = {
 };
 
 const $ = sel => document.querySelector(sel);
+const scrollTop = () => { $('#view').scrollTop = 0; };
 const pad = n => String(n).padStart(2, '0');
 const iso = d => d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate());
 const today = () => iso(new Date());
@@ -115,14 +116,22 @@ function remove(sheet, ids) {
 }
 
 async function api(body) {
-  let res;
+  // без ответа за 30 секунд считаем, что связи нет, иначе индикатор зависает на «сохраняю…»
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 30000);
+  let json;
   try {
     // Content-Type text/plain — так браузер не делает лишний CORS-запрос, и Google его принимает
-    res = await fetch(conn.url, { method: 'POST', body: JSON.stringify(Object.assign({}, body, { token: conn.token })) });
+    const res = await fetch(conn.url, {
+      method: 'POST', signal: ctrl.signal,
+      body: JSON.stringify(Object.assign({}, body, { token: conn.token })),
+    });
+    json = await res.json();
   } catch (e) {
     throw new Error('нет связи с таблицей');
+  } finally {
+    clearTimeout(timer);
   }
-  const json = await res.json();
   if (!json.ok) throw new Error(json.error);
   return json.data;
 }
@@ -781,7 +790,7 @@ const actions = {
   'new-workout': () => {
     ui.edit = { id: uid(), isNew: true, name: '', exercises: [{ id: uid(), name: '', sets: '3', reps: '10', weight: '' }] };
     render();
-    window.scrollTo(0, 0);
+    scrollTop();
   },
   'edit-workout': el => {
     const w = db.Workouts.find(x => x.id === el.dataset.id);
@@ -790,7 +799,7 @@ const actions = {
       exercises: exercisesOf(w.id).map(e => ({ id: e.id, name: e.name, sets: String(e.sets), reps: String(e.reps), weight: String(e.weight) })),
     };
     render();
-    window.scrollTo(0, 0);
+    scrollTop();
   },
   'ex-add': () => {
     const prev = ui.edit.exercises[ui.edit.exercises.length - 1];
@@ -843,7 +852,7 @@ const actions = {
     ui.sessionOpen = true;
     saveSession();
     render();
-    window.scrollTo(0, 0);
+    scrollTop();
   },
   'open-session': () => { ui.sessionOpen = true; render(); },
   'close-session': () => { ui.sessionOpen = false; render(); },
@@ -899,7 +908,7 @@ const actions = {
     ui.sessionOpen = false;
     saveSession();
     render();
-    window.scrollTo(0, 0);
+    scrollTop();
   },
 
   'save-custom': () => {
@@ -968,7 +977,7 @@ document.addEventListener('click', e => {
     ui.tab = tab.dataset.tab;
     ui.editProduct = null;
     render();
-    window.scrollTo(0, 0);
+    scrollTop();
     return;
   }
   const el = e.target.closest('[data-act]');
