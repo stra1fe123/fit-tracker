@@ -1018,6 +1018,16 @@ document.addEventListener('visibilitychange', () => {
   pull();
 });
 
+// iPhone «с экрана Домой»: iOS даёт окно на высоту строки состояния короче экрана,
+// и панель вкладок висит над нижним краем. Растягиваем приложение на весь экран.
+function fitScreen() {
+  const portrait = innerHeight > innerWidth;
+  document.body.style.height = navigator.standalone && portrait && screen.height > innerHeight ? screen.height + 'px' : '';
+}
+addEventListener('resize', fitScreen);
+addEventListener('orientationchange', () => setTimeout(fitScreen, 300));
+fitScreen();
+
 $('#sync').dataset.act = 'sync';
 render();
 setSync(conn.url ? (queue.length ? 'saving' : 'ok') : 'local');

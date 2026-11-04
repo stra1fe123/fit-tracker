@@ -1,6 +1,6 @@
 // Сохраняет файлы приложения, чтобы оно открывалось даже без интернета (например, в зале).
 // Сначала пробуем сеть (чтобы получать обновления), при неудаче — берём из кэша.
-const CACHE = 'fit-tracker-v2';
+const CACHE = 'fit-tracker-v3';
 const FILES = ['./', 'index.html', 'style.css', 'app.js', 'manifest.webmanifest', 'icons/icon-180.png'];
 
 self.addEventListener('install', e => {
