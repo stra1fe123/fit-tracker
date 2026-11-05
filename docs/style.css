@@ -225,3 +225,7 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .ico { width: 18px; height: 18px; display: block; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 .logo-bg { fill: var(--navy); }
 @media (prefers-color-scheme: dark) { .logo-bg { fill: var(--burgundy); } }
+
+.card.hero .btn { background: var(--cream); color: var(--navy); }
+.timer-card .kcal-big { font-variant-numeric: tabular-nums; }
+.timer-card.paused .kcal-big { opacity: .5; }

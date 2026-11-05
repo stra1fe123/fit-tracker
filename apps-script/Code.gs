@@ -14,6 +14,7 @@ const SHEETS = {
   Exercises: ['id', 'workoutId', 'name', 'sets', 'reps', 'weight', 'order'],
   Log:       ['id', 'date', 'workoutId', 'exerciseId', 'name', 'set', 'reps', 'weight'],
   Weight:    ['id', 'date', 'weight'],
+  Sessions:  ['id', 'date', 'workoutId', 'name', 'duration', 'startedAt'], // duration — секунды
 };
 
 // Колонки, которые храним как текст, чтобы таблица не превращала их в даты/числа

@@ -2,8 +2,8 @@
 
 // ---------- Константы ----------
 
-const SHEETS = ['Settings', 'Products', 'Meals', 'Workouts', 'Exercises', 'Log', 'Weight'];
-const NUM = new Set(['protein', 'fat', 'carbs', 'kcal', 'grams', 'sets', 'reps', 'weight', 'order', 'set']);
+const SHEETS = ['Settings', 'Products', 'Meals', 'Workouts', 'Exercises', 'Log', 'Weight', 'Sessions'];
+const NUM = new Set(['protein', 'fat', 'carbs', 'kcal', 'grams', 'sets', 'reps', 'weight', 'order', 'set', 'duration', 'startedAt']);
 
 const ACTIVITY = [
   ['1.2', 'Минимальная (сидячая работа, без спорта)'],
@@ -91,10 +91,16 @@ function normalize(data) {
 let db = normalize(store.get('ft.db', {}));
 let queue = store.get('ft.queue', []);
 let conn = store.get('ft.conn', { url: '', token: '' });
+// Листы, которые есть в подключённой таблице. Если скрипт старый и какого-то листа
+// в нём ещё нет, изменения для него откладываются (deferred) до обновления скрипта.
+let serverSheets = store.get('ft.serverSheets', null);
+let deferred = store.get('ft.deferred', []);
+const serverLacks = sheet => !!serverSheets && !serverSheets.includes(sheet);
 
 function persist() {
   store.set('ft.db', db);
   store.set('ft.queue', queue);
+  store.set('ft.deferred', deferred);
 }
 
 function upsert(sheet, rows) {
@@ -103,7 +109,7 @@ function upsert(sheet, rows) {
     const i = db[sheet].findIndex(r => r.id === row.id);
     if (i >= 0) db[sheet][i] = row; else db[sheet].push(row);
   });
-  if (conn.url) queue.push({ action: 'upsert', sheet, rows });
+  if (conn.url) (serverLacks(sheet) ? deferred : queue).push({ action: 'upsert', sheet, rows });
   persist();
   flush();
 }
@@ -111,7 +117,7 @@ function upsert(sheet, rows) {
 function remove(sheet, ids) {
   ids = [].concat(ids);
   db[sheet] = db[sheet].filter(r => !ids.includes(r.id));
-  if (conn.url) queue.push({ action: 'remove', sheet, ids });
+  if (conn.url) (serverLacks(sheet) ? deferred : queue).push({ action: 'remove', sheet, ids });
   persist();
   flush();
 }
@@ -173,6 +179,17 @@ async function pull() {
   try {
     const data = await api({ action: 'all' });
     if (queue.length) return;
+    serverSheets = Object.keys(data);
+    store.set('ft.serverSheets', serverSheets);
+    if (deferred.length && SHEETS.every(s => data[s])) {
+      // скрипт обновили — отправляем отложенное и загружаем заново
+      queue.push(...deferred);
+      deferred = [];
+      persist();
+      return pull();
+    }
+    // листов, которых нет в таблице, сохраняем локальную копию
+    SHEETS.forEach(s => { if (!data[s]) data[s] = db[s]; });
     db = normalize(data);
     persist();
     setSync('ok');
@@ -263,6 +280,8 @@ const ui = {
   editProduct: null,
 };
 ui.sessionOpen = !!ui.session;
+// тренировка, начатая до появления таймера, — считаем от текущего момента
+if (ui.session && !ui.session.startedAt) Object.assign(ui.session, { startedAt: Date.now(), pausedAt: null, pausedMs: 0 });
 
 const saveSession = () => store.set('ft.session', ui.session);
 
@@ -420,6 +439,29 @@ function lastDone(workoutId) {
   return db.Log.filter(l => l.workoutId === workoutId).reduce((max, l) => (l.date > max ? l.date : max), '');
 }
 
+// ----- Таймер тренировки -----
+// Время считается от отметки начала, поэтому не сбивается, если свернуть или закрыть приложение.
+
+function elapsed(s) {
+  if (!s || !s.startedAt) return 0;
+  return Math.max(0, (s.pausedAt || Date.now()) - s.startedAt - (s.pausedMs || 0));
+}
+function fmtTimer(ms) {
+  const t = Math.floor(ms / 1000), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60);
+  return (h ? h + ':' + pad(m) : String(m)) + ':' + pad(t % 60);
+}
+function fmtDuration(sec) {
+  const m = Math.round(sec / 60);
+  return m >= 60 ? `${Math.floor(m / 60)} ч ${pad(m % 60)} мин` : `${m} мин`;
+}
+const sessionsSorted = () => db.Sessions.slice().sort((a, b) => (a.date === b.date ? a.startedAt - b.startedAt : a.date < b.date ? -1 : 1));
+const lastSessionOf = workoutId => sessionsSorted().filter(s => s.workoutId === workoutId).pop();
+
+setInterval(() => {
+  if (!ui.session) return;
+  document.querySelectorAll('[data-timer]').forEach(el => { el.textContent = fmtTimer(elapsed(ui.session)); });
+}, 1000);
+
 // Подходы из последней тренировки с этим упражнением
 function lastSets(exerciseId) {
   const logs = db.Log.filter(l => l.exerciseId === exerciseId);
@@ -443,17 +485,19 @@ function viewWorkouts() {
   if (ui.session && ui.sessionOpen) return viewSession();
   const list = workoutsSorted();
   return `
-    ${ui.session ? `<div class="banner row between"><span>Идёт тренировка «${esc(ui.session.name)}»</span>
+    ${ui.session ? `<div class="banner row between"><span>Идёт тренировка «${esc(ui.session.name)}»
+      · <b data-timer>${fmtTimer(elapsed(ui.session))}</b></span>
       <button class="btn" data-act="open-session">Продолжить</button></div>` : ''}
     ${list.length ? list.map(w => {
       const ex = exercisesOf(w.id);
+      const lastS = lastSessionOf(w.id);
       const last = lastDone(w.id);
       return `<div class="card">
         <div class="row between"><h3 class="display" style="margin:0;font-size:22px">${esc(w.name)}</h3>
           <button class="icon-btn" data-act="edit-workout" data-id="${esc(w.id)}">${ICON_EDIT}</button></div>
         <p class="muted small">${ex.map(e => esc(e.name)).join(' · ') || 'Нет упражнений'}</p>
         <div class="row between">
-          <span class="muted small">${last ? 'Последняя: ' + fmtDay(last) : 'Ещё не выполнялась'}</span>
+          <span class="muted small">${last ? 'Последняя: ' + fmtDay(last) : 'Ещё не выполнялась'}${lastS && lastS.date === last ? ' · ' + fmtDuration(lastS.duration) : ''}</span>
           <button class="btn" data-act="start" data-id="${esc(w.id)}" ${ex.length && !ui.session ? '' : 'disabled'}>Начать</button>
         </div>
       </div>`;
@@ -493,6 +537,15 @@ function viewSession() {
     <div class="row between" style="margin-bottom:12px">
       <button class="btn ghost" data-act="close-session">← К списку</button>
       <span class="muted small">${esc(s.name)} · ${fmtDay(s.date)}</span>
+    </div>
+    <div class="card hero timer-card ${s.pausedAt ? 'paused' : ''}">
+      <div class="row between">
+        <div>
+          <div class="muted small">${s.pausedAt ? 'Пауза' : 'Время тренировки'}</div>
+          <div class="kcal-big" data-timer>${fmtTimer(elapsed(s))}</div>
+        </div>
+        <button class="btn" data-act="timer-toggle">${s.pausedAt ? 'Продолжить' : 'Пауза'}</button>
+      </div>
     </div>
     ${s.ex.map((x, i) => {
       const last = lastSets(x.exerciseId);
@@ -559,6 +612,26 @@ function exerciseOptions() {
   return opts;
 }
 
+function sessionsCard() {
+  const all = sessionsSorted();
+  if (!all.length) {
+    return '<div class="card"><h2>Время тренировок</h2><p class="muted small" style="margin:0">Появится после первой тренировки с таймером.</p></div>';
+  }
+  const week = all.filter(s => s.date >= addDays(today(), -6));
+  const avg = all.reduce((sum, s) => sum + s.duration, 0) / all.length;
+  return `<div class="card">
+    <h2>Время тренировок</h2>
+    <div class="stats">
+      <div><b>${week.length}</b><span class="muted small">за 7 дней</span></div>
+      <div><b>${fmtDuration(week.reduce((sum, s) => sum + s.duration, 0))}</b><span class="muted small">время за 7 дней</span></div>
+      <div><b>${fmtDuration(avg)}</b><span class="muted small">в среднем</span></div>
+    </div>
+    <ul class="list mt">${all.slice(-5).reverse().map(s => `<li>
+      <div class="info"><div>${fmtDay(s.date)}</div><div class="muted small">${esc(s.name)}</div></div>
+      <b>${fmtDuration(s.duration)}</b></li>`).join('')}</ul>
+  </div>`;
+}
+
 function viewProgress() {
   const ws = weights();
   const avg = avgWeight();
@@ -598,6 +671,7 @@ function viewProgress() {
         <div class="info">${fmtDay(w.date)}</div><b>${r1(w.weight)} кг</b>
         <button class="icon-btn" data-act="del-weight" data-id="${esc(w.id)}">✕</button></li>`).join('')}</ul>` : ''}
     </div>
+    ${sessionsCard()}
     <div class="card">
       <h2>Силовые</h2>
       ${opts.length ? `
@@ -752,7 +826,8 @@ async function connect() {
   }
   store.set('ft.conn', conn);
   if (!prev.url && SHEETS.some(s => db[s].length) && confirm('Перенести данные, которые уже есть на этом устройстве, в таблицу?')) {
-    SHEETS.forEach(s => { if (db[s].length) queue.push({ action: 'upsert', sheet: s, rows: db[s] }); });
+    // Sessions откладываем: если скрипт ещё старый, этот лист в нём не найдётся
+    SHEETS.forEach(s => { if (db[s].length) (s === 'Sessions' ? deferred : queue).push({ action: 'upsert', sheet: s, rows: db[s] }); });
     persist();
   }
   setSetting('appUrl', location.origin + location.pathname);
@@ -854,6 +929,7 @@ const actions = {
     const w = db.Workouts.find(x => x.id === el.dataset.id);
     ui.session = {
       workoutId: w.id, name: w.name, date: today(),
+      startedAt: Date.now(), pausedAt: null, pausedMs: 0,
       ex: exercisesOf(w.id).map(e => ({
         exerciseId: e.id, name: e.name, reps: e.reps, weight: e.weight, planSets: e.sets,
         sets: Array.from({ length: e.sets || 1 }, () => ({ reps: String(e.reps || ''), weight: String(e.weight || ''), done: false })),
@@ -865,6 +941,17 @@ const actions = {
     scrollTop();
   },
   'open-session': () => { ui.sessionOpen = true; render(); },
+  'timer-toggle': () => {
+    const s = ui.session;
+    if (s.pausedAt) {
+      s.pausedMs = (s.pausedMs || 0) + Date.now() - s.pausedAt;
+      s.pausedAt = null;
+    } else {
+      s.pausedAt = Date.now();
+    }
+    saveSession();
+    render();
+  },
   'close-session': () => { ui.sessionOpen = false; render(); },
   'set-done': el => {
     const st = ui.session.ex[el.dataset.i].sets[el.dataset.j];
@@ -912,7 +999,9 @@ const actions = {
         if (maxW !== e.weight) changed.push(Object.assign({}, e, { weight: maxW }));
       });
       if (changed.length) upsert('Exercises', changed);
-      toast(`Тренировка сохранена. ${changed.length ? 'Веса в плане обновлены.' : ''}`);
+      const ms = elapsed(s);
+      upsert('Sessions', { id: uid(), date: s.date, workoutId: s.workoutId, name: s.name, duration: Math.round(ms / 1000), startedAt: s.startedAt });
+      toast(`Тренировка сохранена, время ${fmtTimer(ms)}. ${changed.length ? 'Веса в плане обновлены.' : ''}`);
     }
     ui.session = null;
     ui.sessionOpen = false;
@@ -963,6 +1052,9 @@ const actions = {
     if (!confirm('Отключить таблицу на этом устройстве? Данные в таблице останутся.')) return;
     conn = { url: '', token: '' };
     queue = [];
+    deferred = [];
+    serverSheets = null;
+    store.set('ft.serverSheets', null);
     store.set('ft.conn', conn);
     persist();
     setSync('local');
