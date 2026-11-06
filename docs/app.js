@@ -11,10 +11,11 @@ const ACTIVITY = [
   ['1.55', 'Средняя (3–5 тренировок в неделю)'],
   ['1.725', 'Высокая (6–7 тренировок в неделю)'],
 ];
+// Курсы: ключ хранится в настройке goal; множитель калорий для автоматического режима
 const GOALS = [
-  ['cut', 'Снижение веса (−15% ккал)', 0.85],
-  ['keep', 'Поддержание веса', 1],
-  ['bulk', 'Набор массы (+10% ккал)', 1.1],
+  ['bulk', 'Набор массы', 1.1],
+  ['keep', 'Поддержание', 1],
+  ['cut', 'Сушка', 0.85],
 ];
 const ICON_EDIT = '<svg class="ico" viewBox="0 0 24 24" aria-label="Изменить"><path d="M4 20h4L19 9l-4-4L4 16v4Z"/><path d="M13.5 6.5l4 4"/></svg>';
 const TITLES = { food: 'Питание', workouts: 'Тренировки', progress: 'Прогресс', profile: 'Профиль' };
@@ -231,31 +232,66 @@ function ageFrom(birthDate) {
   return age;
 }
 
+const course = () => setting('goal', 'keep');
+const courseInfo = key => GOALS.find(g => g[0] === key) || GOALS[1];
+const MACRO_KEYS = ['proteinPerKg', 'fatPerKg', 'carbsPerKg'];
+
+// «Свои пропорции» хранятся отдельно для каждого курса: proteinPerKg_bulk и т.д.
+// Старые значения без курса действуют, пока не сохранена норма ни для одного курса.
+function customPerKg(key, c) {
+  const own = setting(`${key}_${c}`);
+  if (own) return num(own);
+  return GOALS.some(g => setting(`${key}_${g[0]}`)) ? 0 : num(setting(key));
+}
+
 // Норма на день. Режим «Свои пропорции»: граммы на 1 кг веса, которые задал сам.
-// Режим «Авто»: формула Миффлина–Сан Жеора + коэффициент активности + цель.
-function targets() {
+// Режим «Авто»: формула Миффлина–Сан Жеора + коэффициент активности + курс.
+function targets(c = course()) {
   const w = avgWeight();
   if (!w) return null;
   if (setting('mode', 'auto') === 'custom') {
-    if (!num(setting('proteinPerKg'))) return null;
-    const protein = Math.round(w * num(setting('proteinPerKg')));
-    const fat = Math.round(w * num(setting('fatPerKg')));
-    const carbs = Math.round(w * num(setting('carbsPerKg')));
+    if (!customPerKg('proteinPerKg', c)) return null;
+    const protein = Math.round(w * customPerKg('proteinPerKg', c));
+    const fat = Math.round(w * customPerKg('fatPerKg', c));
+    const carbs = Math.round(w * customPerKg('carbsPerKg', c));
     return { custom: true, kcal: protein * 4 + fat * 9 + carbs * 4, protein, fat, carbs, weight: w };
   }
+  return autoTargets(c);
+}
+
+function autoTargets(c) {
+  const w = avgWeight();
   const h = num(setting('height'));
   const bd = setting('birthDate');
-  if (!h || !bd) return null;
+  if (!w || !h || !bd) return null;
   const age = ageFrom(bd);
   const bmr = 10 * w + 6.25 * h - 5 * age + (setting('sex', 'male') === 'female' ? -161 : 5);
   const tdee = bmr * num(setting('activity', '1.375'));
-  const goalKey = setting('goal', 'keep');
-  const goal = GOALS.find(g => g[0] === goalKey) || GOALS[1];
+  const goal = courseInfo(c);
   const kcal = Math.round(tdee * goal[2]);
-  const protein = Math.round(w * (goalKey === 'cut' ? 2 : 1.8));
-  const fat = Math.round(w * (goalKey === 'cut' ? 0.8 : 1));
+  const protein = Math.round(w * (c === 'cut' ? 2 : 1.8));
+  const fat = Math.round(w * (c === 'cut' ? 0.8 : 1));
   const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
   return { kcal, protein, fat, carbs, weight: w, age, bmr: Math.round(bmr), tdee: Math.round(tdee), goal };
+}
+
+// Темп изменения веса с начала курса и подсказка, нормальный ли он
+function courseProgress() {
+  const start = setting('courseStart');
+  const ws = weights();
+  if (!start || !ws.length) return null;
+  const startEntry = ws.find(w => w.date >= start) || ws[ws.length - 1];
+  const days = Math.round((parseDate(today()) - parseDate(start)) / 86400000);
+  const change = r1(avgWeight() - startEntry.weight);
+  const res = { days, weeks: Math.floor(days / 7), change, startWeight: startEntry.weight };
+  if (days < 14) return res; // за первые две недели темп ещё ни о чём не говорит
+  const rate = change / (days / 7);
+  const w = avgWeight();
+  const [lo, hi] = { bulk: [0.25, 0.5], keep: [-0.2, 0.2], cut: [-0.01 * w, -0.005 * w] }[course()];
+  res.rate = Math.round(rate * 100) / 100;
+  res.range = [Math.round(lo * 100) / 100, Math.round(hi * 100) / 100];
+  res.verdict = rate < lo ? 'low' : rate > hi ? 'high' : 'ok';
+  return res;
 }
 
 function totals(meals) {
@@ -317,11 +353,14 @@ function viewFood() {
     </div>
     ${weightBanner()}
     <div class="card hero">
+      <div class="muted small" style="margin-bottom:6px">Курс: ${courseInfo(course())[1].toLowerCase()}</div>
       ${t
         ? `<div class="row between"><div><span class="kcal-big">${Math.round(sum.kcal)}</span> <span class="muted">/ ${t.kcal} ккал</span></div>
            <span class="muted small">осталось ${Math.max(0, t.kcal - Math.round(sum.kcal))}</span></div>${bar(sum.kcal, t.kcal)}`
         : `<div><span class="kcal-big">${Math.round(sum.kcal)}</span> <span class="muted">ккал</span></div>
-           <p class="muted small" style="margin:4px 0 0">Заполни профиль и внеси вес — появится дневная норма.</p>`}
+           <p class="muted small" style="margin:4px 0 0">${avgWeight() && setting('mode') === 'custom'
+             ? `Для курса «${courseInfo(course())[1]}» норма ещё не задана — задай её в Профиле.`
+             : 'Заполни профиль и внеси вес — появится дневная норма.'}</p>`}
       <div class="macros">
         ${macro('p', 'Белки', sum.protein, t && t.protein)}
         ${macro('f', 'Жиры', sum.fat, t && t.fat)}
@@ -706,13 +745,22 @@ function targetsHtml() {
 
   if (mode === 'custom') {
     if (!w) return modeSelect + noWeight;
+    // для курса без своей нормы подставляем прежнюю норму (если была) или расчёт по формуле
+    const anyCourseSaved = GOALS.some(g => setting(`proteinPerKg_${g[0]}`));
+    const legacy = !anyCourseSaved && num(setting('proteinPerKg')) && {
+      protein: Math.round(w * num(setting('proteinPerKg'))), fat: Math.round(w * num(setting('fatPerKg'))), carbs: Math.round(w * num(setting('carbsPerKg'))),
+    };
+    const prefill = t || legacy || autoTargets(course());
     return `${modeSelect}
-      <p class="muted small" style="margin:0 0 8px">Впиши, сколько ешь сейчас при весе ${w} кг. Приложение запомнит граммы на 1 кг веса
-      и само пересчитает норму, когда вес изменится.</p>
+      <p class="muted small" style="margin:0 0 8px">${t
+        ? `Норма для курса «${courseInfo(course())[1]}».`
+        : `<b>Для курса «${courseInfo(course())[1]}» норма ещё не задана.</b>
+           ${legacy ? 'Ниже — твоя прежняя норма, поправь при необходимости и сохрани.' : prefill ? 'Ниже — расчёт по формуле, поправь под себя и сохрани.' : ''}`}
+      Впиши граммы при весе ${w} кг — приложение запомнит их на 1 кг веса и само пересчитает норму, когда вес изменится.</p>
       <div class="row">
-        <label class="grow">Белки, г<input id="cu-p" inputmode="decimal" value="${t ? t.protein : ''}"></label>
-        <label class="grow">Жиры, г<input id="cu-f" inputmode="decimal" value="${t ? t.fat : ''}"></label>
-        <label class="grow">Углев., г<input id="cu-c" inputmode="decimal" value="${t ? t.carbs : ''}"></label>
+        <label class="grow">Белки, г<input id="cu-p" inputmode="decimal" value="${prefill ? prefill.protein : ''}"></label>
+        <label class="grow">Жиры, г<input id="cu-f" inputmode="decimal" value="${prefill ? prefill.fat : ''}"></label>
+        <label class="grow">Углев., г<input id="cu-c" inputmode="decimal" value="${prefill ? prefill.carbs : ''}"></label>
       </div>
       <button class="btn block" data-act="save-custom">Сохранить</button>
       ${t ? `<div class="mt">${targetStats(t)}</div>
@@ -722,7 +770,8 @@ function targetsHtml() {
   if (!t) return modeSelect + (w ? '<p class="muted small" style="margin:0">Заполни рост и дату рождения выше.</p>' : noWeight);
   return `${modeSelect}${targetStats(t)}
     <p class="muted small">Вес ${t.weight} кг (среднее за 7 дней), возраст ${t.age}. Обмен в покое ≈ ${t.bmr} ккал,
-    с учётом активности ≈ ${t.tdee} ккал, цель: ${t.goal[1].toLowerCase()}.<br>
+    с учётом активности ≈ ${t.tdee} ккал, курс: ${t.goal[1].toLowerCase()}
+    (${t.goal[2] === 1 ? 'без поправки' : (t.goal[2] > 1 ? '+' : '−') + Math.round(Math.abs(t.goal[2] - 1) * 100) + '% ккал'}).<br>
     Норма пересчитывается сама, когда меняется твой вес или возраст.</p>`;
 }
 
@@ -749,9 +798,44 @@ function productItem(p) {
     <button class="icon-btn" data-act="edit-product" data-id="${esc(p.id)}">${ICON_EDIT}</button></li>`;
 }
 
+function courseHtml() {
+  const c = course();
+  const p = courseProgress();
+  const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + Math.abs(n);
+  let progress = '<p class="muted small" style="margin:0">Укажи дату начала, чтобы видеть темп изменения веса.</p>';
+  if (p) {
+    progress = `<div class="stats">
+        ${p.weeks
+          ? `<div><b>${p.weeks}</b><span class="muted small">${p.weeks === 1 ? 'неделя' : p.weeks <= 4 ? 'недели' : 'недель'}</span></div>`
+          : `<div><b>${p.days}</b><span class="muted small">дн. курса</span></div>`}
+        <div><b>${signed(p.change)}</b><span class="muted small">кг с начала</span></div>
+        <div><b>${p.rate == null ? '—' : signed(p.rate)}</b><span class="muted small">кг в неделю</span></div>
+      </div>`;
+    if (p.rate == null) {
+      progress += '<p class="muted small" style="margin:10px 0 0">Темп появится через 2 недели курса.</p>';
+    } else {
+      const range = `рекомендуемо ${signed(p.range[0])}…${signed(p.range[1])} кг/нед`;
+      const advice = {
+        ok: 'Темп в норме',
+        low: c === 'cut' ? 'Вес уходит быстрее рекомендуемого — можно добавить 150–200 ккал' : 'Темп ниже рекомендуемого — можно добавить 150–200 ккал',
+        high: c === 'cut' ? 'Вес уходит медленнее рекомендуемого — можно убрать 150–200 ккал' : 'Темп выше рекомендуемого — можно убрать 150–200 ккал',
+      }[p.verdict];
+      progress += `<p class="hint" style="margin:10px 0 0">${advice} (${range}).</p>`;
+    }
+  }
+  return `<div class="segmented">${GOALS.map(g =>
+      `<button class="${g[0] === c ? 'on' : ''}" data-act="set-course" data-c="${g[0]}">${g[1]}</button>`).join('')}</div>
+    <label class="mt">Начало курса<input type="date" data-setting="courseStart" value="${esc(setting('courseStart'))}" max="${today()}"></label>
+    ${progress}`;
+}
+
 function viewProfile() {
   const products = db.Products.slice().sort((a, b) => a.name.localeCompare(b.name, 'ru'));
   return `
+    <div class="card">
+      <h2>Текущий курс</h2>
+      <div id="course">${courseHtml()}</div>
+    </div>
     <div class="card">
       <h2>Мои данные</h2>
       <div class="row">
@@ -760,7 +844,6 @@ function viewProfile() {
       </div>
       <label>Дата рождения<input type="date" data-setting="birthDate" value="${esc(setting('birthDate'))}"></label>
       <label>Активность<select data-setting="activity">${opt(ACTIVITY, setting('activity', '1.375'))}</select></label>
-      <label>Цель<select data-setting="goal">${opt(GOALS, setting('goal', 'keep'))}</select></label>
     </div>
     <div class="card">
       <h2>Дневная норма</h2>
@@ -1021,11 +1104,25 @@ const actions = {
     const w = avgWeight();
     const p = num($('#cu-p').value), f = num($('#cu-f').value), c = num($('#cu-c').value);
     if (!p || !f || !c) return toast('Заполни белки, жиры и углеводы');
-    setSetting('proteinPerKg', (p / w).toFixed(3));
-    setSetting('fatPerKg', (f / w).toFixed(3));
-    setSetting('carbsPerKg', (c / w).toFixed(3));
+    const cur = course();
+    setSetting(`proteinPerKg_${cur}`, (p / w).toFixed(3));
+    setSetting(`fatPerKg_${cur}`, (f / w).toFixed(3));
+    setSetting(`carbsPerKg_${cur}`, (c / w).toFixed(3));
     $('#targets').innerHTML = targetsHtml();
-    toast('Норма сохранена');
+    toast(`Норма для курса «${courseInfo(cur)[1]}» сохранена`);
+  },
+  'set-course': el => {
+    const next = el.dataset.c, prev = course();
+    if (next === prev) return;
+    if (!confirm(`Начать курс «${courseInfo(next)[1]}» с сегодняшнего дня?`)) return;
+    // старая норма без курса относилась к текущему курсу — закрепляем её за ним
+    if (MACRO_KEYS.every(k => !GOALS.some(g => setting(`${k}_${g[0]}`))) && setting('proteinPerKg')) {
+      MACRO_KEYS.forEach(k => setSetting(`${k}_${prev}`, setting(k)));
+    }
+    setSetting('goal', next);
+    setSetting('courseStart', today());
+    render();
+    toast(`Курс «${courseInfo(next)[1]}» начат`);
   },
 
   // продукты и подключение
@@ -1103,6 +1200,7 @@ document.addEventListener('change', e => {
   if (el.dataset.setting) {
     setSetting(el.dataset.setting, el.value);
     $('#targets').innerHTML = targetsHtml();
+    if (el.dataset.setting === 'courseStart') $('#course').innerHTML = courseHtml();
   } else if (el.id === 'prog-ex') {
     ui.progressEx = el.value;
     render();

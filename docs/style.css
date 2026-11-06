@@ -229,3 +229,7 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .card.hero .btn { background: var(--cream); color: var(--navy); }
 .timer-card .kcal-big { font-variant-numeric: tabular-nums; }
 .timer-card.paused .kcal-big { opacity: .5; }
+
+.segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--field); border: 1px solid var(--line); border-radius: 14px; }
+.segmented button { border: 0; background: none; color: var(--muted); padding: 10px 2px; border-radius: 10px; font-weight: 600; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.segmented button.on { background: var(--accent); color: var(--on-accent); }
