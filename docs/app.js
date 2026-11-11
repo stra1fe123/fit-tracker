@@ -341,6 +341,35 @@ function macro(cls, label, value, target) {
 
 // ----- Питание -----
 
+// Среднее БЖУ в день за прошедшие дни этой недели (с понедельника до выбранного дня, не включая его;
+// пустые дни не считаем) и сколько съесть сегодня, чтобы неделя в среднем вышла на норму.
+function weekCard(t) {
+  const monday = addDays(ui.date, -((parseDate(ui.date).getDay() + 6) % 7));
+  const days = {};
+  db.Meals.filter(m => m.date >= monday && m.date < ui.date).forEach(m => { (days[m.date] = days[m.date] || []).push(m); });
+  const n = Object.keys(days).length;
+  if (!n) return '';
+  const sum = totals([].concat(...Object.values(days)));
+  const cell = (cls, label, key) => {
+    const avg = Math.round(sum[key] / n);
+    const diff = t ? avg - t[key] : 0;
+    return `<div class="macro ${cls}"><span class="muted small">${label}</span>
+      <b>${avg} г${t && Math.abs(diff) >= 1 ? ` <span class="small ${diff < 0 ? 'under' : 'muted'}">${diff > 0 ? '+' : '−'}${Math.abs(diff)}</span>` : ''}</b>
+      ${bar(avg, t && t[key])}</div>`;
+  };
+  // сколько нужно сегодня, чтобы среднее за неделю сравнялось с нормой; не больше +30% к дневной норме
+  const need = key => Math.max(0, Math.min(Math.round(t[key] * (n + 1) - sum[key]), Math.round(t[key] * 1.3)));
+  return `<div class="card week">
+    <div class="row between"><h2 style="margin:0">Неделя · среднее за ${n} дн.</h2>
+      <span class="muted small" style="white-space:nowrap">${Math.round(sum.kcal / n)} ккал</span></div>
+    <div class="macros" style="margin-top:12px">
+      ${cell('p', 'Белки', 'protein')}${cell('f', 'Жиры', 'fat')}${cell('c', 'Углеводы', 'carbs')}
+    </div>
+    ${t ? `<p class="small hint" style="margin:10px 0 0">Чтобы неделя вышла на норму, ${ui.date === today() ? 'сегодня' : 'в этот день'}:
+      Б ${need('protein')} · Ж ${need('fat')} · У ${need('carbs')} г</p>` : ''}
+  </div>`;
+}
+
 function viewFood() {
   const meals = db.Meals.filter(m => m.date === ui.date);
   const sum = totals(meals);
@@ -352,6 +381,7 @@ function viewFood() {
       <button class="icon-btn" data-act="day" data-d="1" ${ui.date >= today() ? 'disabled' : ''}>›</button>
     </div>
     ${weightBanner()}
+    ${weekCard(t)}
     <div class="card hero">
       <div class="muted small" style="margin-bottom:6px">Курс: ${courseInfo(course())[1].toLowerCase()}</div>
       ${t

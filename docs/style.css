@@ -233,3 +233,6 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .segmented { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px; background: var(--field); border: 1px solid var(--line); border-radius: 14px; }
 .segmented button { border: 0; background: none; color: var(--muted); padding: 10px 2px; border-radius: 10px; font-weight: 600; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
+
+.under { color: var(--danger); }
+.card.week { padding: 14px 16px; }
