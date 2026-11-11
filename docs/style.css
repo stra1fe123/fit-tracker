@@ -234,5 +234,4 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .segmented button { border: 0; background: none; color: var(--muted); padding: 10px 2px; border-radius: 10px; font-weight: 600; font-size: 13px; white-space: nowrap; cursor: pointer; }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
 
-.under { color: var(--danger); }
-.card.week { padding: 14px 16px; }
+.week-avg { margin-bottom: 10px; }
