@@ -517,9 +517,19 @@ setInterval(() => {
   document.querySelectorAll('[data-timer]').forEach(el => { el.textContent = fmtTimer(elapsed(ui.session)); });
 }, 1000);
 
+// История упражнений связывается по названию: «Жим лёжа» и «жим лежа» — одно упражнение,
+// даже если его удалили и добавили снова или оно есть в разных тренировках.
+const exKey = name => String(name || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
+// Запись из истории относится к текущему названию упражнения (если его переименовали), иначе — к своему
+function logKey(l) {
+  const e = db.Exercises.find(x => x.id === l.exerciseId);
+  return exKey(e ? e.name : l.name);
+}
+
 // Подходы из последней тренировки с этим упражнением
-function lastSets(exerciseId) {
-  const logs = db.Log.filter(l => l.exerciseId === exerciseId);
+function lastSets(name) {
+  const key = exKey(name);
+  const logs = db.Log.filter(l => logKey(l) === key);
   if (!logs.length) return null;
   const date = logs.reduce((max, l) => (l.date > max ? l.date : max), '');
   return logs.filter(l => l.date === date).sort((a, b) => a.set - b.set);
@@ -537,7 +547,7 @@ function fmtSets(sets) {
 // человек добавляет повторы, пока все подходы не дойдут до цели, и тогда сам повышает вес.
 // Вес в плане не хранится; в первый раз поле веса пустое.
 function initialSets(e) {
-  const last = lastSets(e.id);
+  const last = lastSets(e.name);
   return Array.from({ length: e.sets || 1 }, (_, j) => {
     const l = last && (last[j] || last[last.length - 1]);
     return l
@@ -613,7 +623,7 @@ function viewSession() {
       </div>
     </div>
     ${s.ex.map((x, i) => {
-      const last = lastSets(x.exerciseId);
+      const last = lastSets(x.name);
       return `<div class="card ex-card">
         <h3>${esc(x.name)}</h3>
         <div class="muted small">Цель: ${x.planSets}×${x.reps || '—'}</div>
@@ -664,13 +674,16 @@ function chart(points, unit) {
   </svg>`;
 }
 
+// По одному пункту на упражнение (по названию), сначала те, что сейчас в тренировках
 function exerciseOptions() {
   const opts = [];
-  workoutsSorted().forEach(w => exercisesOf(w.id).forEach(e => opts.push({ id: e.id, label: `${w.name}: ${e.name}` })));
-  // упражнения, которые удалили из плана, но в истории они остались
-  db.Log.forEach(l => {
-    if (!opts.some(o => o.id === l.exerciseId)) opts.push({ id: l.exerciseId, label: l.name + ' (архив)' });
-  });
+  const add = (name, archived) => {
+    const id = exKey(name);
+    if (id && !opts.some(o => o.id === id)) opts.push({ id, label: name.trim() + (archived ? ' (нет в тренировках)' : '') });
+  };
+  workoutsSorted().forEach(w => exercisesOf(w.id).forEach(e => add(e.name, false)));
+  // упражнения, которых уже нет в тренировках, но в истории они остались
+  db.Log.slice().reverse().forEach(l => add(db.Exercises.some(e => e.id === l.exerciseId) ? '' : l.name, true));
   return opts;
 }
 
@@ -707,11 +720,11 @@ function viewProgress() {
 
   const opts = exerciseOptions();
   if (!opts.some(o => o.id === ui.progressEx)) {
-    const withLogs = opts.find(o => db.Log.some(l => l.exerciseId === o.id));
+    const withLogs = opts.find(o => db.Log.some(l => logKey(l) === o.id));
     ui.progressEx = withLogs ? withLogs.id : (opts[0] ? opts[0].id : '');
   }
   const byDate = {};
-  db.Log.filter(l => l.exerciseId === ui.progressEx).forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l); });
+  db.Log.filter(l => logKey(l) === ui.progressEx).forEach(l => { (byDate[l.date] = byDate[l.date] || []).push(l); });
   const dates = Object.keys(byDate).sort();
   const strength = dates.map(d => ({ x: d, y: Math.max(...byDate[d].map(l => l.weight)) }));
 
