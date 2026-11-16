@@ -521,6 +521,60 @@ setInterval(() => {
 // даже если его удалили и добавили снова или оно есть в разных тренировках.
 const exKey = name => String(name || '').trim().toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ');
 // Запись из истории относится к текущему названию упражнения (если его переименовали), иначе — к своему
+// Все известные упражнения (из тренировок и истории), по одному на название
+function knownExercises() {
+  const names = new Map();
+  db.Exercises.concat(db.Log.slice().reverse()).forEach(x => {
+    const key = exKey(x.name);
+    if (key && !names.has(key)) names.set(key, x.name.trim());
+  });
+  return names;
+}
+
+// Расстояние Левенштейна: сколько букв нужно поменять, вставить или удалить
+function editDistance(a, b) {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+// Подсказки к названию упражнения: сначала начинающиеся с введённого, потом содержащие его,
+// потом похожие с опечаткой (1 буква в коротких словах, 2 — в длинных)
+function exerciseSuggestions(typed) {
+  const q = exKey(typed);
+  if (q.length < 2) return [];
+  const allowed = q.length > 6 ? 2 : 1;
+  const scored = [];
+  knownExercises().forEach((name, key) => {
+    // то же упражнение, но написано иначе («жим лежа») — предлагаем привычное написание первым
+    if (key === q) { if (name !== typed.trim()) scored.push({ name, score: -1 }); return; }
+    let score;
+    if (key.startsWith(q)) score = 0;
+    else if (key.includes(q)) score = 1;
+    else {
+      // опечатка во всём названии или в его начале той же длины
+      const d = Math.min(editDistance(q, key), editDistance(q, key.slice(0, q.length)));
+      if (q.length >= 3 && d <= allowed) score = 2 + d;
+    }
+    if (score != null) scored.push({ name, score });
+  });
+  return scored.sort((a, b) => a.score - b.score || a.name.localeCompare(b.name, 'ru')).slice(0, 5).map(s => s.name);
+}
+
+function updateExSuggest(i, typed) {
+  const list = $('#ex-suggest-' + i);
+  if (!list) return;
+  const names = exerciseSuggestions(typed);
+  list.innerHTML = names.map(n => `<li data-act="ex-pick" data-i="${i}" data-name="${esc(n)}">${esc(n)}</li>`).join('');
+  list.hidden = !names.length;
+}
+
 function logKey(l) {
   const e = db.Exercises.find(x => x.id === l.exerciseId);
   return exKey(e ? e.name : l.name);
@@ -589,10 +643,11 @@ function viewEdit() {
     </div>
     ${e.exercises.map((x, i) => `<div class="card">
       <div class="row">
-        <input class="grow" data-input="edit-ex" data-i="${i}" data-f="name" value="${esc(x.name)}" placeholder="Упражнение, например Жим лёжа">
+        <input class="grow" data-input="edit-ex" data-i="${i}" data-f="name" value="${esc(x.name)}" placeholder="Упражнение, например Жим лёжа" autocomplete="off">
         <button class="icon-btn" data-act="ex-up" data-i="${i}" ${i ? '' : 'disabled'}>↑</button>
         <button class="icon-btn" data-act="ex-del" data-i="${i}">✕</button>
       </div>
+      <ul class="suggest" id="ex-suggest-${i}" hidden></ul>
       <div class="row mt">
         <label class="grow">Подходы<input data-input="edit-ex" data-i="${i}" data-f="sets" inputmode="numeric" value="${esc(x.sets)}"></label>
         <label class="grow">Цель, повторов<input data-input="edit-ex" data-i="${i}" data-f="reps" inputmode="numeric" value="${esc(x.reps)}"></label>
@@ -1011,6 +1066,12 @@ const actions = {
     render();
   },
   'ex-del': el => { ui.edit.exercises.splice(Number(el.dataset.i), 1); render(); },
+  'ex-pick': el => {
+    const i = el.dataset.i;
+    ui.edit.exercises[i].name = el.dataset.name;
+    $(`[data-input="edit-ex"][data-i="${i}"][data-f="name"]`).value = el.dataset.name;
+    $('#ex-suggest-' + i).hidden = true;
+  },
   'ex-up': el => {
     const i = Number(el.dataset.i);
     const ex = ui.edit.exercises;
@@ -1189,7 +1250,10 @@ const inputs = {
   },
   pick: () => { $('#preview').innerHTML = previewText(); },
   'edit-name': el => { ui.edit.name = el.value; },
-  'edit-ex': el => { ui.edit.exercises[el.dataset.i][el.dataset.f] = el.value; },
+  'edit-ex': el => {
+    ui.edit.exercises[el.dataset.i][el.dataset.f] = el.value;
+    if (el.dataset.f === 'name') updateExSuggest(el.dataset.i, el.value);
+  },
   set: el => {
     ui.session.ex[el.dataset.i].sets[el.dataset.j][el.dataset.f] = el.value;
     saveSession();
@@ -1209,6 +1273,13 @@ document.addEventListener('click', e => {
   }
   const el = e.target.closest('[data-act]');
   if (el && !el.disabled && actions[el.dataset.act]) actions[el.dataset.act](el, e);
+});
+
+// Ушёл с поля названия — прячем подсказки (с задержкой, чтобы успел сработать тап по подсказке)
+document.addEventListener('focusout', e => {
+  const el = e.target;
+  if (el.dataset.input !== 'edit-ex' || el.dataset.f !== 'name') return;
+  setTimeout(() => { const list = $('#ex-suggest-' + el.dataset.i); if (list) list.hidden = true; }, 250);
 });
 
 document.addEventListener('input', e => {

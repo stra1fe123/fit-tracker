@@ -235,3 +235,5 @@ label input, label select { margin-top: 4px; color: var(--text); }
 .segmented button.on { background: var(--accent); color: var(--on-accent); }
 
 .week-avg { margin-bottom: 10px; }
+[id^="ex-suggest-"] { background: var(--card); }
+[id^="ex-suggest-"] li::before { content: "↳ "; color: var(--muted); }
