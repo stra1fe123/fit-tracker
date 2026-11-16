@@ -525,14 +525,27 @@ function lastSets(exerciseId) {
   return logs.filter(l => l.date === date).sort((a, b) => a.set - b.set);
 }
 
-// Если в прошлый раз все подходы сделаны на нужное число повторов — предлагаем добавить вес
-function suggestion(x) {
-  const last = lastSets(x.exerciseId);
-  const planW = num(x.weight), planR = num(x.reps);
-  if (!last || !planW || !planR || last.length < x.planSets) return 0;
-  const allDone = last.every(l => l.reps >= planR) && Math.max(...last.map(l => l.weight)) >= planW;
-  if (!allDone) return 0;
-  return r1(planW + (planW >= 40 ? 2.5 : 1));
+// «60 кг × 7 · 6 · 6 · 6», а если вес в подходах разный — «60×7, 62.5×6»
+function fmtSets(sets) {
+  const sameWeight = sets.every(l => l.weight === sets[0].weight);
+  return sameWeight
+    ? `${r1(sets[0].weight)} кг × ${sets.map(l => l.reps).join(' · ')}`
+    : sets.map(l => `${r1(l.weight)}×${l.reps}`).join(', ');
+}
+
+// Двухступенчатая прогрессия: подходы подставляются с повторами и весом прошлой тренировки,
+// человек добавляет повторы, пока все подходы не дойдут до плана, и тогда повышает вес.
+// Если вес в плане поменяли вручную (не совпадает с прошлым) — берём план.
+function initialSets(e) {
+  const last = lastSets(e.id);
+  const count = e.sets || 1;
+  const fromLast = last && Math.max(...last.map(l => l.weight)) === num(e.weight);
+  return Array.from({ length: count }, (_, j) => {
+    const l = fromLast && (last[j] || last[last.length - 1]);
+    return l
+      ? { reps: String(l.reps), weight: String(l.weight), done: false }
+      : { reps: String(e.reps || ''), weight: String(e.weight || ''), done: false };
+  });
 }
 
 function viewWorkouts() {
@@ -604,13 +617,10 @@ function viewSession() {
     </div>
     ${s.ex.map((x, i) => {
       const last = lastSets(x.exerciseId);
-      const sug = suggestion(x);
       return `<div class="card ex-card">
         <h3>${esc(x.name)}</h3>
         <div class="muted small">План: ${x.planSets}×${x.reps || '—'} · ${r1(num(x.weight))} кг</div>
-        ${last ? `<div class="muted small">Прошлый раз (${fmtShort(last[0].date)}): ${last.map(l => `${r1(l.weight)}×${l.reps}`).join(', ')}</div>` : ''}
-        ${sug ? `<div class="hint">В прошлый раз всё выполнено — попробуй ${sug} кг
-          <button class="btn ghost small" data-act="apply-sug" data-i="${i}" data-w="${sug}">применить</button></div>` : ''}
+        ${last ? `<div class="hint">Прошлый раз (${fmtShort(last[0].date)}): ${fmtSets(last)}</div>` : ''}
         <div class="sets">
           <span class="hdr">#</span><span class="hdr">Повторы</span><span class="hdr">Вес, кг</span><span></span>
           ${x.sets.map((st, j) => `
@@ -1031,7 +1041,7 @@ const actions = {
       startedAt: Date.now(), pausedAt: null, pausedMs: 0,
       ex: exercisesOf(w.id).map(e => ({
         exerciseId: e.id, name: e.name, reps: e.reps, weight: e.weight, planSets: e.sets,
-        sets: Array.from({ length: e.sets || 1 }, () => ({ reps: String(e.reps || ''), weight: String(e.weight || ''), done: false })),
+        sets: initialSets(e),
       })),
     };
     ui.sessionOpen = true;
@@ -1066,11 +1076,6 @@ const actions = {
     render();
   },
   'set-del': el => { ui.session.ex[el.dataset.i].sets.pop(); saveSession(); render(); },
-  'apply-sug': el => {
-    ui.session.ex[el.dataset.i].sets.forEach(st => { if (!st.done) st.weight = el.dataset.w; });
-    saveSession();
-    render();
-  },
   'cancel-session': () => {
     if (!confirm('Отменить тренировку? Отмеченные подходы не сохранятся.')) return;
     ui.session = null;
