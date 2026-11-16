@@ -534,17 +534,15 @@ function fmtSets(sets) {
 }
 
 // Двухступенчатая прогрессия: подходы подставляются с повторами и весом прошлой тренировки,
-// человек добавляет повторы, пока все подходы не дойдут до плана, и тогда повышает вес.
-// Если вес в плане поменяли вручную (не совпадает с прошлым) — берём план.
+// человек добавляет повторы, пока все подходы не дойдут до цели, и тогда сам повышает вес.
+// Вес в плане не хранится; в первый раз поле веса пустое.
 function initialSets(e) {
   const last = lastSets(e.id);
-  const count = e.sets || 1;
-  const fromLast = last && Math.max(...last.map(l => l.weight)) === num(e.weight);
-  return Array.from({ length: count }, (_, j) => {
-    const l = fromLast && (last[j] || last[last.length - 1]);
+  return Array.from({ length: e.sets || 1 }, (_, j) => {
+    const l = last && (last[j] || last[last.length - 1]);
     return l
       ? { reps: String(l.reps), weight: String(l.weight), done: false }
-      : { reps: String(e.reps || ''), weight: String(e.weight || ''), done: false };
+      : { reps: String(e.reps || ''), weight: '', done: false };
   });
 }
 
@@ -587,8 +585,7 @@ function viewEdit() {
       </div>
       <div class="row mt">
         <label class="grow">Подходы<input data-input="edit-ex" data-i="${i}" data-f="sets" inputmode="numeric" value="${esc(x.sets)}"></label>
-        <label class="grow">Повторы<input data-input="edit-ex" data-i="${i}" data-f="reps" inputmode="numeric" value="${esc(x.reps)}"></label>
-        <label class="grow">Вес, кг<input data-input="edit-ex" data-i="${i}" data-f="weight" inputmode="decimal" value="${esc(x.weight)}"></label>
+        <label class="grow">Цель, повторов<input data-input="edit-ex" data-i="${i}" data-f="reps" inputmode="numeric" value="${esc(x.reps)}"></label>
       </div>
     </div>`).join('')}
     <button class="btn secondary block" data-act="ex-add">+ Упражнение</button>
@@ -619,8 +616,8 @@ function viewSession() {
       const last = lastSets(x.exerciseId);
       return `<div class="card ex-card">
         <h3>${esc(x.name)}</h3>
-        <div class="muted small">План: ${x.planSets}×${x.reps || '—'} · ${r1(num(x.weight))} кг</div>
-        ${last ? `<div class="hint">Прошлый раз (${fmtShort(last[0].date)}): ${fmtSets(last)}</div>` : ''}
+        <div class="muted small">Цель: ${x.planSets}×${x.reps || '—'}</div>
+        ${last ? `<div class="small" style="color:var(--accent-text)">Прошлый раз (${fmtShort(last[0].date)}): ${fmtSets(last)}</div>` : ''}
         <div class="sets">
           <span class="hdr">#</span><span class="hdr">Повторы</span><span class="hdr">Вес, кг</span><span></span>
           ${x.sets.map((st, j) => `
@@ -1093,19 +1090,9 @@ const actions = {
       if (!confirm('Ни один подход не отмечен галочкой. Закрыть тренировку без сохранения?')) return;
     } else {
       upsert('Log', rows);
-      // рабочий вес в плане = максимальный вес, с которым сделал подходы сегодня
-      const changed = [];
-      s.ex.forEach(x => {
-        const done = x.sets.filter(st => st.done);
-        const e = db.Exercises.find(ex => ex.id === x.exerciseId);
-        if (!done.length || !e) return;
-        const maxW = r1(Math.max(...done.map(st => num(st.weight))));
-        if (maxW !== e.weight) changed.push(Object.assign({}, e, { weight: maxW }));
-      });
-      if (changed.length) upsert('Exercises', changed);
       const ms = elapsed(s);
       upsert('Sessions', { id: uid(), date: s.date, workoutId: s.workoutId, name: s.name, duration: Math.round(ms / 1000), startedAt: s.startedAt });
-      toast(`Тренировка сохранена, время ${fmtTimer(ms)}. ${changed.length ? 'Веса в плане обновлены.' : ''}`);
+      toast(`Тренировка сохранена, время ${fmtTimer(ms)}`);
     }
     ui.session = null;
     ui.sessionOpen = false;
