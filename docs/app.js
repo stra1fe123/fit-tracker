@@ -313,6 +313,8 @@ const ui = {
   session: store.get('ft.session', null), // идущая тренировка (переживает закрытие приложения)
   sessionOpen: false,
   progressEx: '',
+  attendancePeriod: 'month',
+  attendanceMonth: today().slice(0, 7),
   editProduct: null,
 };
 ui.sessionOpen = !!ui.session;
@@ -742,6 +744,43 @@ function exerciseOptions() {
   return opts;
 }
 
+function attendanceCard() {
+  const now = today();
+  const month = ui.attendanceMonth;
+  const year = month.slice(0, 4);
+  const yearly = ui.attendancePeriod === 'year';
+  const days = new Set();
+  for (const rows of [db.Sessions || [], db.Log]) {
+    for (const row of rows) {
+      if (typeof row.date === 'string' && row.date.startsWith(year + '-') && row.date <= now) days.add(row.date);
+    }
+  }
+  const monthCount = [...days].filter(day => day.startsWith(month + '-')).length;
+  function calendar(prefix) {
+    const first = parseDate(prefix + '-01');
+    const length = new Date(first.getFullYear(), first.getMonth() + 1, 0).getDate();
+    const offset = (first.getDay() + 6) % 7;
+    let cells = '<i></i>'.repeat(offset);
+    for (let n = 1; n <= length; n++) {
+      const date = prefix + '-' + pad(n);
+      const active = days.has(date);
+      cells += `<span class="heat-day ${active ? 'visited' : ''}" title="${date}${active ? ' · тренировка' : ''}">${yearly ? '' : n}</span>`;
+    }
+    return `<div class="heat-grid">${yearly ? '' : ['Пн','Вт','Ср','Чт','Пт','Сб','Вс'].map(d => '<small>' + d + '</small>').join('')}${cells}</div>`;
+  }
+  const monthLabel = prefix => parseDate(prefix + '-01').toLocaleString('ru', {month:'long'});
+  const months = Array.from({length:12}, (_, i) => year + '-' + pad(i + 1));
+  const period = yearly ? year : monthLabel(month) + ' ' + year;
+  return `<div class="card attendance"><h2>Дни тренировок</h2>
+    <div class="row"><button class="btn ${yearly ? 'secondary' : ''}" data-act="attendance-mode" data-mode="month">Месяц</button>
+    <button class="btn ${yearly ? '' : 'secondary'}" data-act="attendance-mode" data-mode="year">Год</button></div>
+    <div class="datebar mt"><button class="icon-btn" aria-label="Предыдущий период" data-act="attendance-step" data-d="-1">‹</button>
+    <strong>${period}</strong><button class="icon-btn" aria-label="Следующий период" data-act="attendance-step" data-d="1" ${(yearly ? year >= now.slice(0,4) : month >= now.slice(0,7)) ? 'disabled' : ''}>›</button></div>
+    <p>Тренировочных дней за ${yearly ? 'год' : 'месяц'} · <b>${yearly ? days.size : monthCount}</b></p>
+    ${yearly ? '<div class="heat-year">' + months.map(m => '<div><small>' + monthLabel(m) + '</small>' + calendar(m) + '</div>').join('') + '</div>' : calendar(month)}
+    </div>`;
+}
+
 function sessionsCard() {
   const all = sessionsSorted();
   if (!all.length) {
@@ -801,6 +840,7 @@ function viewProgress() {
         <div class="info">${fmtDay(w.date)}</div><b>${r1(w.weight)} кг</b>
         <button class="icon-btn" data-act="del-weight" data-id="${esc(w.id)}">✕</button></li>`).join('')}</ul>` : ''}
     </div>
+    ${attendanceCard()}
     ${sessionsCard()}
     <div class="card">
       <h2>Силовые</h2>
@@ -1011,6 +1051,18 @@ async function connect() {
 }
 
 const actions = {
+  'attendance-mode': el => {
+    ui.attendancePeriod = el.dataset.mode;
+    render();
+  },
+  'attendance-step': el => {
+    const first = parseDate(ui.attendanceMonth + '-01');
+    const step = ui.attendancePeriod === 'year' ? 12 : 1;
+    first.setMonth(first.getMonth() + Number(el.dataset.d) * step);
+    const next = iso(first).slice(0, 7);
+    ui.attendanceMonth = next > today().slice(0, 7) ? today().slice(0, 7) : next;
+    render();
+  },
   sync: () => pull(),
 
   // питание
